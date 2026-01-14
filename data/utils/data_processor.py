@@ -1,58 +1,51 @@
-def clean_sales_data(raw_lines):
-    total_records = 0
-    invalid_records = 0
-    valid_records = []
-
-    for line in raw_lines:
-        total_records += 1
-        fields = line.split("|")
-
-        if len(fields) != 8:
-            invalid_records += 1
-            continue
-
-        transaction_id = fields[0].strip()
-        customer_id = fields[1].strip()
-        product_name = fields[2].strip().replace(",", " ")
-        category = fields[3].strip()
-        quantity = fields[4].strip().replace(",", "")
-        unit_price = fields[5].strip().replace(",", "")
-        region = fields[6].strip()
-        date = fields[7].strip()
-
-        # Validation rules
-        if not transaction_id.startswith("T"):
-            invalid_records += 1
-            continue
-
-        if not customer_id or not region:
-            invalid_records += 1
-            continue
-
+import pandas as pd
+from pathlib import Path
+from typing import Optional
+ 
+ 
+def load_data(path: str, sep: Optional[str] = '|', dtype: Optional[dict] = None, **kwargs):
+    """Load a delimited file into a DataFrame.
+ 
+    - If `sep` is None, the function will try to sniff a delimiter from the header line.
+    - `dtype` can be used to pass a dict of column dtypes; by default reads all as `str`.
+    """
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Data file not found: {path}")
+ 
+    if sep is None:
+        # Simple delimiter sniffing from the first line
+        encoding = kwargs.get('encoding', 'utf-8')
+        with p.open('r', encoding=encoding, errors='ignore') as f:
+            header = f.readline()
+        if '|' in header:
+            sep = '|'
+        elif ',' in header:
+            sep = ','
+        elif '\t' in header:
+            sep = '\t'
+        else:
+            sep = ','
+ 
+    return pd.read_csv(p, sep=sep, dtype=dtype or str, **kwargs)
+ 
+ 
+def save_data(df: pd.DataFrame, path: str, format: str = 'csv', index: bool = False, **kwargs):
+    """Save DataFrame to `path` in `csv` or `parquet` format.
+ 
+    - Ensures parent directories exist before writing.
+    - For Parquet export, requires `pyarrow` or `fastparquet` installed.
+    """
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+ 
+    fmt = format.lower()
+    if fmt == 'csv':
+        df.to_csv(p, index=index, **kwargs)
+    elif fmt in ('parquet', 'pq'):
         try:
-            quantity = int(quantity)
-            unit_price = float(unit_price)
-        except:
-            invalid_records += 1
-            continue
-
-        if quantity <= 0 or unit_price <= 0:
-            invalid_records += 1
-            continue
-
-        valid_records.append([
-            transaction_id,
-            customer_id,
-            product_name,
-            category,
-            quantity,
-            unit_price,
-            region,
-            date
-        ])
-
-    print(f"Total records parsed: {total_records}")
-    print(f"Invalid records removed: {invalid_records}")
-    print(f"Valid records after cleaning: {len(valid_records)}")
-
-    return valid_records
+            df.to_parquet(p, index=index, **kwargs)
+        except Exception as e:
+            raise RuntimeError("Parquet write failed; install 'pyarrow' or 'fastparquet'.") from e
+    else:
+        raise ValueError(f"Unsupported format: {format}")
