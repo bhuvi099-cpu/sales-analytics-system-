@@ -1,51 +1,50 @@
 import pandas as pd
-from pathlib import Path
-from typing import Optional
+import numpy as np
  
  
-def load_data(path: str, sep: Optional[str] = '|', dtype: Optional[dict] = None, **kwargs):
-    """Load a delimited file into a DataFrame.
+def _clean_unitprice(val):
+    if pd.isna(val):
+        return np.nan
+    s = str(val).replace(',', '').strip()
+    try:
+        return float(s)
+    except Exception:
+        return np.nan
  
-    - If `sep` is None, the function will try to sniff a delimiter from the header line.
-    - `dtype` can be used to pass a dict of column dtypes; by default reads all as `str`.
+ 
+def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = df.columns.str.strip()
+ 
+    # Quantity -> numeric
+    df['Quantity'] = pd.to_numeric(df['Quantity'], errors='coerce').fillna(0).astype(int)
+ 
+    # UnitPrice: remove thousands separators and convert
+    df['UnitPrice'] = df['UnitPrice'].apply(_clean_unitprice)
+ 
+    # Treat non-positive prices as missing
+    df.loc[df['UnitPrice'] <= 0, 'UnitPrice'] = pd.NA
+ 
+    # Normalize names and product descriptions
+    if 'ProductName' in df.columns:
+        df['ProductName'] = df['ProductName'].astype(str).str.replace(',', ' ', regex=False).str.strip()
+ 
+    # Fill missing identifiers/regions
+    df['Region'] = df['Region'].fillna('Unknown')
+    df['CustomerID'] = df['CustomerID'].fillna('Unknown')
+ 
+    # Drop rows missing critical IDs
+    df = df.dropna(subset=['TransactionID', 'ProductID'])
+ 
+    # Compute TotalPrice
+    df['TotalPrice'] = df['Quantity'] * pd.to_numeric(df['UnitPrice'], errors='coerce').fillna(0)
+ 
+    return df
+ 
+def upload_results(df, endpoint_url: str):
+    """Placeholder: upload dataframe `df` to a remote endpoint.
+ 
+    Not implemented in this scaffold.
     """
-    p = Path(path)
-    if not p.exists():
-        raise FileNotFoundError(f"Data file not found: {path}")
+    raise NotImplementedError("API upload not configured")
  
-    if sep is None:
-        # Simple delimiter sniffing from the first line
-        encoding = kwargs.get('encoding', 'utf-8')
-        with p.open('r', encoding=encoding, errors='ignore') as f:
-            header = f.readline()
-        if '|' in header:
-            sep = '|'
-        elif ',' in header:
-            sep = ','
-        elif '\t' in header:
-            sep = '\t'
-        else:
-            sep = ','
- 
-    return pd.read_csv(p, sep=sep, dtype=dtype or str, **kwargs)
- 
- 
-def save_data(df: pd.DataFrame, path: str, format: str = 'csv', index: bool = False, **kwargs):
-    """Save DataFrame to `path` in `csv` or `parquet` format.
- 
-    - Ensures parent directories exist before writing.
-    - For Parquet export, requires `pyarrow` or `fastparquet` installed.
-    """
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
- 
-    fmt = format.lower()
-    if fmt == 'csv':
-        df.to_csv(p, index=index, **kwargs)
-    elif fmt in ('parquet', 'pq'):
-        try:
-            df.to_parquet(p, index=index, **kwargs)
-        except Exception as e:
-            raise RuntimeError("Parquet write failed; install 'pyarrow' or 'fastparquet'.") from e
-    else:
-        raise ValueError(f"Unsupported format: {format}")
