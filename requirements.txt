@@ -1,0 +1,9 @@
+pandas → data processing & cleaning
+
+pyarrow → fast columnar data handling (Parquet/Arrow)
+
+fastparquet → Parquet file support
+
+matplotlib → plotting & visualization
+
+seaborn → statistical visualization
